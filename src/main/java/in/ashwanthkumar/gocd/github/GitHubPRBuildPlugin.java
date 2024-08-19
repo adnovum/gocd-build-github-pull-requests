@@ -1,5 +1,22 @@
 package in.ashwanthkumar.gocd.github;
 
+import static in.ashwanthkumar.gocd.github.util.JSONUtils.fromJSON;
+import static java.util.Collections.emptyMap;
+import static java.util.Collections.singletonList;
+import static java.util.stream.Collectors.joining;
+
+import java.io.IOException;
+import java.lang.reflect.Constructor;
+import java.nio.charset.StandardCharsets;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Properties;
+
 import com.google.gson.reflect.TypeToken;
 import com.thoughtworks.go.plugin.api.GoApplicationAccessor;
 import com.thoughtworks.go.plugin.api.GoPlugin;
@@ -25,16 +42,6 @@ import in.ashwanthkumar.utils.collections.Lists;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang3.tuple.Pair;
-
-import java.io.IOException;
-import java.lang.reflect.Constructor;
-import java.nio.charset.StandardCharsets;
-import java.text.SimpleDateFormat;
-import java.util.*;
-
-import static in.ashwanthkumar.gocd.github.util.JSONUtils.fromJSON;
-import static java.util.Collections.singletonList;
-import static java.util.stream.Collectors.joining;
 
 @Extension
 public class GitHubPRBuildPlugin implements GoPlugin {
@@ -101,6 +108,8 @@ public class GitHubPRBuildPlugin implements GoPlugin {
 
     @Override
     public GoPluginApiResponse handle(GoPluginApiRequest goPluginApiRequest) {
+        LOGGER.info(goPluginApiRequest.requestName());
+        LOGGER.info(goPluginApiRequest.requestBody());
         if (goPluginApiRequest.requestName().equals(REQUEST_SCM_CONFIGURATION)) {
             return handleSCMConfiguration();
         } else if (goPluginApiRequest.requestName().equals(REQUEST_SCM_VIEW)) {
@@ -212,6 +221,8 @@ public class GitHubPRBuildPlugin implements GoPlugin {
         Map<String, Object> requestBodyMap = fromJSON(goPluginApiRequest.requestBody(), REQUEST_BODY_TYPE);
         Map<String, String> configuration = keyValuePairs(requestBodyMap, "scm-configuration");
         GitConfig gitConfig = getGitConfig(configuration);
+        String revisionMapBehavior = configuration.get("revisionMapBehavior");
+        LOGGER.info("revisionMapBehavior: " + revisionMapBehavior); // TODO debug
         String flyweightFolder = (String) requestBodyMap.get("flyweight-folder");
         LOGGER.info(String.format("Flyweight: %s", flyweightFolder));
 
@@ -219,15 +230,21 @@ public class GitHubPRBuildPlugin implements GoPlugin {
             GitHelper git = gitFactory.create(gitConfig, gitFolderFactory.create(flyweightFolder));
             Map<String, String> branchToRevisionMap = buildBranchToRevisionMap(git);
 
-            Pair<String, String> newerRevision = findNewerPrRevision(Collections.emptyMap(), branchToRevisionMap, configuration);
+            Pair<String, String> newerRevision = findNewerPrRevision(emptyMap(), branchToRevisionMap, configuration);
 
             if (newerRevision == null) {
                 LOGGER.debug(String.format("No new PRs found for %s. Revisions: %s", gitConfig.getUrl(), branchToRevisionMap));
                 return buildLatestRevisionResponse(null, branchToRevisionMap);
             }
 
-            // Remove all other branches from the response to ensure the next time those will be picked up by GoCD
-            branchToRevisionMap.entrySet().removeIf(entry -> !Objects.equals(entry.getKey(), newerRevision.getKey()));
+
+            if ("store_all".equals(revisionMapBehavior)) {
+                // Remove nothing from the map, meaning store all new PRs. So they're all marked as done.
+            }
+            else { // also covers "clear_all"
+                // Remove all other branches from the response to ensure the next time those will be picked up by GoCD
+                branchToRevisionMap.entrySet().removeIf(entry -> !Objects.equals(entry.getKey(), newerRevision.getKey()));
+            }
 
             Revision revision = git.getDetailsForRevision(newerRevision.getValue());
             String branch = newerRevision.getKey();
@@ -259,6 +276,8 @@ public class GitHubPRBuildPlugin implements GoPlugin {
         Map<String, Object> requestBodyMap = fromJSON(goPluginApiRequest.requestBody(), REQUEST_BODY_TYPE);
         Map<String, String> configuration = keyValuePairs(requestBodyMap, "scm-configuration");
         final GitConfig gitConfig = getGitConfig(configuration);
+        String revisionMapBehavior = configuration.get("revisionMapBehavior");
+        LOGGER.info("revisionMapBehavior: " + revisionMapBehavior); // TODO debug
         Map<String, String> scmData = (Map<String, String>) requestBodyMap.get("scm-data");
         Map<String, String> oldPrRevisionMap = fromJSON(scmData.get(BRANCH_TO_REVISION_MAP), REVISION_MAP_TYPE);
         String flyweightFolder = (String) requestBodyMap.get("flyweight-folder");
@@ -274,7 +293,8 @@ public class GitHubPRBuildPlugin implements GoPlugin {
             if (newerRevision == null) {
                 LOGGER.debug(String.format("No updated PRs found for %s. Old: %s New: %s", gitConfig.getUrl(), oldPrRevisionMap,
                         newPrToRevisionMap));
-                return buildLatestRevisionsResponse(null, newPrToRevisionMap);
+                return buildLatestRevisionsResponse(null,
+                        "clear_all".equals(revisionMapBehavior) ? emptyMap() : newPrToRevisionMap);
             }
 
             String pr = newerRevision.getKey();
@@ -285,11 +305,23 @@ public class GitHubPRBuildPlugin implements GoPlugin {
             LOGGER.debug(String.format("Commits on %s since previous %s: %s", gitConfig.getUrl(), lastKnownSHA,
                     revisions.stream().map(m -> (String) m.get("revision")).collect(joining(", "))));
 
-            // We shouldn't return any new PRs from newPRToRevisionMap.
-            // Instead of that, we can always return the old map and update only the one PR
-            // that we will return (as found in newerRevision).
-            Map<String, String> updatedPrToRevisionMap = new HashMap<>(oldPrRevisionMap);
-            updatedPrToRevisionMap.put(pr, latestSHA);
+            Map<String, String> updatedPrToRevisionMap = new HashMap<>();
+
+            if ("store_all".equals(revisionMapBehavior)) {
+                // Store all new PRs. So they're all marked as done.
+                updatedPrToRevisionMap.putAll(newPrToRevisionMap);
+            }
+            else if ("clear_all".equals(revisionMapBehavior)) {
+                // Only store the PR we're building, so all other (old) PRs
+                // are marked as unbuilt.
+                updatedPrToRevisionMap.put(pr, latestSHA);
+            }
+            else {
+                // Default behavior: keep the old PRs, only update the one we're building.
+                // So any other new PRs will be built in future executions.
+                updatedPrToRevisionMap.putAll(oldPrRevisionMap);
+                updatedPrToRevisionMap.put(pr, latestSHA);
+            }
 
             return buildLatestRevisionsResponse(revisions, updatedPrToRevisionMap);
         } catch (Throwable t) {
@@ -399,7 +431,7 @@ public class GitHubPRBuildPlugin implements GoPlugin {
         GitConfig gitConfig = getGitConfig(configuration);
         String destinationFolder = (String) requestBodyMap.get("destination-folder");
         Map<String, Object> revisionMap = (Map<String, Object>) requestBodyMap.get("revision");
-        Map<String, String> customDataBag = (Map<String, String>) revisionMap.getOrDefault("data", Collections.emptyMap());
+        Map<String, String> customDataBag = (Map<String, String>) revisionMap.getOrDefault("data", emptyMap());
         String revision = (String) revisionMap.get("revision");
         LOGGER.info(String.format("destination: %s. commit: %s", destinationFolder, revision));
 
