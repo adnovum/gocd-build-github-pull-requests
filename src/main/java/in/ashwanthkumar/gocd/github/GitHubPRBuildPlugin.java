@@ -13,6 +13,7 @@ import com.tw.go.plugin.model.GitConfig;
 import com.tw.go.plugin.model.ModifiedFile;
 import com.tw.go.plugin.model.Revision;
 import in.ashwanthkumar.gocd.github.provider.Provider;
+import in.ashwanthkumar.gocd.github.provider.github.GitHubProvider;
 import in.ashwanthkumar.gocd.github.settings.scm.PluginConfigurationView;
 import in.ashwanthkumar.gocd.github.util.BranchFilter;
 import in.ashwanthkumar.gocd.github.util.ExtendedGitCmdHelper;
@@ -225,7 +226,12 @@ public class GitHubPRBuildPlugin implements GoPlugin {
             }
 
             // Remove all other branches from the response to ensure the next time those will be picked up by GoCD
-            branchToRevisionMap.entrySet().removeIf(entry -> !Objects.equals(entry.getKey(), newerRevision.getKey()));
+            if (provider instanceof GitHubProvider) {
+                LOGGER.info("Storing all seen PRs for initial GitHub PR material load.");
+            }
+            else {
+                branchToRevisionMap.entrySet().removeIf(entry -> !Objects.equals(entry.getKey(), newerRevision.getKey()));
+            }
 
             Revision revision = git.getDetailsForRevision(newerRevision.getValue());
             String branch = newerRevision.getKey();

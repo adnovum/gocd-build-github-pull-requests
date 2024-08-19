@@ -13,6 +13,7 @@ import in.ashwanthkumar.gocd.github.provider.gerrit.GerritProvider;
 import in.ashwanthkumar.gocd.github.provider.git.GitProvider;
 import in.ashwanthkumar.gocd.github.provider.github.GHUtils;
 import in.ashwanthkumar.gocd.github.provider.github.GitHubProvider;
+import in.ashwanthkumar.gocd.github.provider.stash.StashProvider;
 import in.ashwanthkumar.gocd.github.util.ExtendedGitCmdHelper;
 import in.ashwanthkumar.gocd.github.util.GitFactory;
 import in.ashwanthkumar.gocd.github.util.GitFolderFactory;
@@ -372,7 +373,7 @@ public class GitHubPRBuildPluginTest {
         mockGitRevisions(gitFactory, revisions);
 
         GitFolderFactory gitFolderFactory = mock(GitFolderFactory.class);
-        Provider provider = new TestProvider();
+        Provider provider = new StashProvider();
         GitHubPRBuildPlugin plugin = new GitHubPRBuildPlugin(
                 provider,
                 gitFactory,
@@ -390,6 +391,39 @@ public class GitHubPRBuildPluginTest {
 
         String branchToRevisionMap = (String) ((Map<String, Object>)responseBody.get("scm-data")).get("BRANCH_TO_REVISION_MAP");
         assertEquals("{\"test-2\":\"test2abcd11111111\"}", branchToRevisionMap);
+
+        Map<String, String> revision = (Map<String, String>) responseBody.get("revision");
+        assertEquals("test2abcd11111111", revision.get("revision"));
+    }
+
+    @Test
+    public void handleGetLatestRevisionShouldReturnAllBranchesForGitHub() {
+        GitFactory gitFactory = mock(GitFactory.class);
+
+        Map<String, String> revisions = new HashMap<>();
+        revisions.put("test-1", "test1abcd11111111");
+        revisions.put("test-2", "test2abcd11111111");
+        mockGitRevisions(gitFactory, revisions);
+
+        GitFolderFactory gitFolderFactory = mock(GitFolderFactory.class);
+        Provider provider = new GitHubProvider();
+        GitHubPRBuildPlugin plugin = new GitHubPRBuildPlugin(
+                provider,
+                gitFactory,
+                gitFolderFactory,
+                mockGoApplicationAccessor()
+        );
+        GitHubPRBuildPlugin pluginSpy = spy(plugin);
+
+        GoPluginApiRequest request = mock(GoPluginApiRequest.class);
+        when(request.requestBody()).thenReturn("{scm-configuration: {url: {value: \"https://github.com/mdaliejaz/samplerepo.git\"}}, flyweight-folder: \"" + TEST_DIR + "\"}");
+
+        GoPluginApiResponse response = pluginSpy.handleGetLatestRevision(request);
+        Map<String, Object> responseBody =
+                (Map<String, Object>) JSONUtils.fromJSON(response.responseBody());
+
+        String branchToRevisionMap = (String) ((Map<String, Object>)responseBody.get("scm-data")).get("BRANCH_TO_REVISION_MAP");
+        assertEquals("{\"test-2\":\"test2abcd11111111\",\"test-1\":\"test1abcd11111111\"}", branchToRevisionMap);
 
         Map<String, String> revision = (Map<String, String>) responseBody.get("revision");
         assertEquals("test2abcd11111111", revision.get("revision"));
