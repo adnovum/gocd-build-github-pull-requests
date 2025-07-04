@@ -434,7 +434,7 @@ public class GitHubPRBuildPluginTest {
 
     private void mockGitHelperToReturnBranch(GitFactory gitFactory, final String branch) {
         ExtendedGitCmdHelper helper = mock(ExtendedGitCmdHelper.class);
-        when(gitFactory.create(any(GitConfig.class), any(File.class))).thenReturn(helper);
+        when(gitFactory.create(any(), any())).thenReturn(helper);
 
         Map<String, String> result = new HashMap<>();
         result.put(branch, "abcdef01234567891");
@@ -450,7 +450,7 @@ public class GitHubPRBuildPluginTest {
 
     private void mockGitRevisions(GitFactory gitFactory, Map<String, String> revisions) {
         ExtendedGitCmdHelper helper = mock(ExtendedGitCmdHelper.class);
-        when(gitFactory.create(any(GitConfig.class), any(File.class))).thenReturn(helper);
+        when(gitFactory.create(any(), any())).thenReturn(helper);
 
         when(helper.getBranchToRevisionMap(anyString())).thenReturn(revisions);
 

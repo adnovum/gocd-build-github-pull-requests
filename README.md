@@ -171,12 +171,6 @@ blacklist pattern matches to the branch name.
 Build and test:
 
 ```shell
-./mvnw package
-```
-
-Build a specific variant:
-
-```shell
 ./mvnw package -P <variant>
 ```
 
