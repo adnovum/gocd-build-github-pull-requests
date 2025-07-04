@@ -12,8 +12,6 @@ import com.tw.go.plugin.GitHelper;
 import com.tw.go.plugin.model.GitConfig;
 import com.tw.go.plugin.model.ModifiedFile;
 import com.tw.go.plugin.model.Revision;
-import com.tw.go.plugin.util.ListUtil;
-import com.tw.go.plugin.util.StringUtil;
 import in.ashwanthkumar.gocd.github.provider.Provider;
 import in.ashwanthkumar.gocd.github.settings.scm.PluginConfigurationView;
 import in.ashwanthkumar.gocd.github.util.BranchFilter;
@@ -23,7 +21,7 @@ import in.ashwanthkumar.gocd.github.util.GitFolderFactory;
 import in.ashwanthkumar.gocd.github.util.JSONUtils;
 import in.ashwanthkumar.utils.collections.Lists;
 import org.apache.commons.io.IOUtils;
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.Pair;
 
 import java.io.IOException;
@@ -356,7 +354,7 @@ public class GitHubPRBuildPlugin implements GoPlugin {
 
     private Map<String, Object> populateRevisionMapForSHA(GitConfig gitConfig, String branch, Revision revision) {
         // patch for building merge commits
-        if (revision.isMergeCommit() && ListUtil.isEmpty(revision.getModifiedFiles())) {
+        if (revision.isMergeCommit() && (revision.getModifiedFiles() == null || revision.getModifiedFiles().isEmpty())) {
             revision.setModifiedFiles(Lists.of(new ModifiedFile("/dev/null", "deleted")));
         }
 
@@ -451,7 +449,7 @@ public class GitHubPRBuildPlugin implements GoPlugin {
         response.put("timestamp", new SimpleDateFormat(DATE_PATTERN).format(revision.getTimestamp()));
         response.put("revisionComment", revision.getComment());
         List<Map<String, String>> modifiedFilesMapList = new ArrayList<>();
-        if (!ListUtil.isEmpty(revision.getModifiedFiles())) {
+        if (revision.getModifiedFiles() != null && !revision.getModifiedFiles().isEmpty()) {
             for (ModifiedFile modifiedFile : revision.getModifiedFiles()) {
                 Map<String, String> modifiedFileMap = new HashMap<>();
                 modifiedFileMap.put("fileName", modifiedFile.getFileName());
@@ -497,7 +495,7 @@ public class GitHubPRBuildPlugin implements GoPlugin {
     }
 
     public void validateUrl(GitConfig gitConfig, Map<String, Object> fieldMap) {
-        if (StringUtil.isEmpty(gitConfig.getUrl())) {
+        if (StringUtils.isEmpty(gitConfig.getUrl())) {
             fieldMap.put("key", "url");
             fieldMap.put("message", "URL is a required field");
         } else if (!provider.isValidURL(gitConfig.getUrl())) {
@@ -507,7 +505,7 @@ public class GitHubPRBuildPlugin implements GoPlugin {
     }
 
     public void checkConnection(GitConfig gitConfig, Map<String, Object> response, List<String> messages) {
-        if (StringUtil.isEmpty(gitConfig.getUrl())) {
+        if (StringUtils.isEmpty(gitConfig.getUrl())) {
             response.put("status", "failure");
             messages.add("URL is empty");
         } else if (!provider.isValidURL(gitConfig.getUrl())) {
