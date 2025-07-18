@@ -263,7 +263,7 @@ public class GitHubPRBuildPlugin implements GoPlugin {
         LOGGER.debug(String.format("Fetching latest for: %s", gitConfig.getUrl()));
 
         try {
-            GitHelper git = gitFactory.create(gitConfig, gitFolderFactory.create(flyweightFolder));
+            ExtendedGitCmdHelper git = gitFactory.create(gitConfig, gitFolderFactory.create(flyweightFolder));
             Map<String, String> newPrToRevisionMap = buildBranchToRevisionMap(git);
 
             Pair<String, String> newerRevision = findNewerPrRevision(oldPrRevisionMap, newPrToRevisionMap,
@@ -328,7 +328,7 @@ public class GitHubPRBuildPlugin implements GoPlugin {
         return null;
     }
 
-    private List<Map<String, Object>> findAllRevisionsSince(GitHelper git, GitConfig gitConfig, String branch, String lastKnownSHA,
+    private List<Map<String, Object>> findAllRevisionsSince(ExtendedGitCmdHelper git, GitConfig gitConfig, String branch, String lastKnownSHA,
             String latestSHA) {
         List<Map<String, Object>> revisions = new ArrayList<>();
 
@@ -336,7 +336,7 @@ public class GitHubPRBuildPlugin implements GoPlugin {
             git.resetHard(latestSHA);
             List<Revision> allRevisionsSince;
             try {
-                allRevisionsSince = git.getRevisionsSince(lastKnownSHA);
+                allRevisionsSince = git.getRevisionsUntilHeadSince(lastKnownSHA);
             } catch (Exception e) {
                 allRevisionsSince = singletonList(git.getLatestRevision());
             }
