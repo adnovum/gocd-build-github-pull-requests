@@ -1,5 +1,32 @@
 package in.ashwanthkumar.gocd.github;
 
+import static java.util.Collections.singletonList;
+import static java.util.stream.Collectors.toList;
+import static org.hamcrest.CoreMatchers.containsString;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.collection.IsMapContaining.hasKey;
+import static org.hamcrest.core.Is.is;
+import static org.hamcrest.core.IsNot.not;
+import static org.hamcrest.core.IsNull.nullValue;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.anyString;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+import java.io.File;
+import java.io.IOException;
+import java.util.Collections;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Properties;
+import java.util.UUID;
+
 import com.google.gson.Gson;
 import com.thoughtworks.go.plugin.api.GoApplicationAccessor;
 import com.thoughtworks.go.plugin.api.request.GoApiRequest;
@@ -18,23 +45,11 @@ import in.ashwanthkumar.gocd.github.util.GitFactory;
 import in.ashwanthkumar.gocd.github.util.GitFolderFactory;
 import in.ashwanthkumar.gocd.github.util.JSONUtils;
 import org.apache.commons.io.FileUtils;
-import org.junit.*;
+import org.junit.After;
+import org.junit.Before;
+import org.junit.Ignore;
+import org.junit.Test;
 import org.mockito.ArgumentCaptor;
-
-import java.io.File;
-import java.io.IOException;
-import java.util.*;
-
-import static java.util.Collections.singletonList;
-import static org.hamcrest.collection.IsMapContaining.hasKey;
-import static org.hamcrest.core.Is.is;
-import static org.hamcrest.core.IsNot.not;
-import static org.hamcrest.core.IsNull.nullValue;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.mockito.Mockito.*;
-import static org.hamcrest.CoreMatchers.containsString;
-import static org.hamcrest.MatcherAssert.assertThat;
 
 
 public class GitHubPRBuildPluginTest {
@@ -168,7 +183,6 @@ public class GitHubPRBuildPluginTest {
         assertEquals("\"Error message with nothing to replace.\"", response.responseBody());
     }
 
-    @Ignore
     @Test
     public void shouldGetLatestRevisionSince() {
         GitHubPRBuildPlugin plugin = new GitHubPRBuildPlugin();
@@ -176,17 +190,31 @@ public class GitHubPRBuildPluginTest {
         GitHubPRBuildPlugin pluginSpy = spy(plugin);
 
         GoPluginApiRequest request = mock(GoPluginApiRequest.class);
-        when(request.requestBody()).thenReturn("{scm-configuration: {url: {value: \"https://github.com/mdaliejaz/samplerepo.git\"}}, previous-revision: {revision: \"a683e0a27e66e710126f7697337efca052396a32\", data: {ACTIVE_PULL_REQUESTS: \"{\\\"1\\\": \\\"12c6ef2ae9843842e4800f2c4763388db81d6ec7\\\"}\"}}, flyweight-folder: \"" + TEST_DIR + "\"}");
+        when(request.requestBody()).thenReturn(
+                "{"
+                    + "\"scm-configuration\": {"
+                        + "\"url\": {value: \"https://github.com/mdaliejaz/samplerepo.git\"}"
+                    + "}, "
+                    + "\"previous-revision\": {"
+                        + "\"revision\": \"a683e0a27e66e710126f7697337efca052396a32\""
+                    + "}, "
+                + "\"scm-data\": {"
+                    + "\"BRANCH_TO_REVISION_MAP\": \"{\\\"1\\\": \\\"0ce34a830ea571cf0d85b1dfe3d2105724b15b3a\\\"}\""
+                + "},"
+                + "flyweight-folder: \"" + TEST_DIR + "\""
+                + "}");
 
-        pluginSpy.handleLatestRevisionSince(request);
+        GoPluginApiResponse response = pluginSpy.handleLatestRevisionSince(request);
+        System.out.println(response.responseBody());
 
-        ArgumentCaptor<GitConfig> gitConfig = ArgumentCaptor.forClass(GitConfig.class);
-        ArgumentCaptor<String> prId = ArgumentCaptor.forClass(String.class);
-        ArgumentCaptor<Revision> revision = ArgumentCaptor.forClass(Revision.class);
-        verify(pluginSpy).populateRevisionMap(gitConfig.capture(), prId.capture(), revision.capture());
+        Map<String, Object> responseMap = JSONUtils.fromJSON(response.responseBody());
+        List<Map<String, Object>> newRevisions = (List<Map<String, Object>>) responseMap.get("revisions");
+        List<String> newRevisionsShas = newRevisions.stream().map(r -> (String) r.get("revision")).collect(toList());
 
-        assertThat(prId.getValue(), is("2"));
-        assertThat(revision.getValue().getRevision(), is("f985e61e556fc37f952385152d837de426b5cd8a"));
+        // See https://github.com/mdaliejaz/samplerepo/pull/1/commits
+        // We are pretending to have seen the first commit 0ce34a830ea571cf0d85b1dfe3d2105724b15b3a.
+        // So the plugin should report the second commit 12c6ef2ae9843842e4800f2c4763388db81d6ec7 as new.
+        assertThat(newRevisionsShas, is(singletonList("12c6ef2ae9843842e4800f2c4763388db81d6ec7")));
     }
 
     @Ignore
